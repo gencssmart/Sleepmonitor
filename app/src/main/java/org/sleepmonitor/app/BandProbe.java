@@ -1,46 +1,31 @@
 package org.sleepmonitor.app;
-import android.bluetooth.*;
-import android.content.Context;
-import android.os.*;
-import java.util.function.Consumer;
+import android.bluetooth.*;import android.content.Context;import android.os.*;import java.util.*;import java.io.*;import java.math.BigInteger;import java.security.SecureRandom;import java.util.function.Consumer;import javax.crypto.Cipher;import javax.crypto.spec.SecretKeySpec;
+import org.bouncycastle.asn1.sec.SECNamedCurves;import org.bouncycastle.math.ec.ECPoint;
 @SuppressWarnings("MissingPermission")
 final class BandProbe {
- private final Context context;
- private final Consumer<String> log;
- private final Handler handler=new Handler(Looper.getMainLooper());
- private BluetoothGatt gatt;
- private volatile boolean closed;
+ final Context context;final Consumer<String> log;final Handler h=new Handler(Looper.getMainLooper());
+ BluetoothGatt g;BluetoothGattCharacteristic tx,rx,raw;boolean closed,busy;int state,handle,packets,seq,expected,endpoint,inHandle;byte[] key;BigInteger priv;ByteArrayOutputStream buf;ArrayDeque<byte[]> queue=new ArrayDeque<>();ArrayDeque<BluetoothGattCharacteristic> targets=new ArrayDeque<>();
  BandProbe(Context c,Consumer<String> l){context=c;log=l;}
- void start(String address){
-  try {
-   BluetoothManager manager=context.getSystemService(BluetoothManager.class);
-   BluetoothAdapter adapter=manager.getAdapter();
-   if(adapter==null||!adapter.isEnabled()){log.accept("Bluetooth deaktiviert");return;}
-   if(!BluetoothAdapter.checkBluetoothAddress(address)){log.accept("Ungültige MAC-Adresse");return;}
-   log.accept("Verbinde "+address);
-   gatt=adapter.getRemoteDevice(address).connectGatt(context,false,new BluetoothGattCallback(){
-    @Override public void onConnectionStateChange(BluetoothGatt g,int status,int state){
-     if(closed)return;
-     log.accept("GATT Status "+status+", Zustand "+state);
-     if(status==BluetoothGatt.GATT_SUCCESS&&state==BluetoothProfile.STATE_CONNECTED){
-      if(!g.discoverServices())log.accept("Service-Suche konnte nicht gestartet werden");
-     }else if(state==BluetoothProfile.STATE_DISCONNECTED){log.accept("Verbindung getrennt");}
-    }
-    @Override public void onServicesDiscovered(BluetoothGatt g,int status){
-     if(closed)return;
-     log.accept("Service-Suche: "+status);
-     if(status!=BluetoothGatt.GATT_SUCCESS)return;
-     for(BluetoothGattService s:g.getServices()){
-      log.accept("Service "+s.getUuid());
-      for(BluetoothGattCharacteristic c:s.getCharacteristics()){
-       log.accept("  "+c.getUuid()+" Eigenschaften 0x"+Integer.toHexString(c.getProperties()));
-      }
-     }
-     log.accept("Diagnose abgeschlossen. Keine Schreibbefehle gesendet. Authentifizierung und Sensordaten noch nicht implementiert.");
-    }
-   },BluetoothDevice.TRANSPORT_LE);
-   handler.postDelayed(()->{if(!closed){log.accept("Diagnose nach 90 s beendet");close();}},90000);
-  }catch(Exception e){log.accept("Fehler: "+e.getClass().getSimpleName());}
- }
- void close(){closed=true;handler.removeCallbacksAndMessages(null);BluetoothGatt g=gatt;gatt=null;if(g!=null){try{g.disconnect();}catch(Exception ignored){}try{g.close();}catch(Exception ignored){}}}
+ static UUID u(String n){return UUID.fromString("0000"+n+"-0000-3512-2118-0009af100700");}
+ void start(String address,String secret){try{String s=secret.replaceFirst("(?i)^0x","");if(!s.matches("[0-9a-fA-F]{32}")){log.accept("Ungültiger Auth Key");return;}key=new byte[16];for(int i=0;i<16;i++)key[i]=(byte)Integer.parseInt(s.substring(2*i,2*i+2),16);BluetoothAdapter a=context.getSystemService(BluetoothManager.class).getAdapter();if(!BluetoothAdapter.checkBluetoothAddress(address))throw new IllegalArgumentException();g=a.getRemoteDevice(address).connectGatt(context,false,cb,BluetoothDevice.TRANSPORT_LE);h.postDelayed(()->{if(!closed&&state!=3)fail("Authentifizierung: Zeitlimit");},45000);h.postDelayed(()->{if(!closed){log.accept("Test beendet");close();}},180000);}catch(Exception e){fail("Verbindung konnte nicht gestartet werden");}}
+ final BluetoothGattCallback cb=new BluetoothGattCallback(){
+ public void onConnectionStateChange(BluetoothGatt x,int status,int st){h.post(()->{if(closed)return;if(status==0&&st==2){log.accept("Verbunden");if(!x.discoverServices())fail("Service-Suche fehlgeschlagen");}else fail("BLE getrennt, Status "+status);});}
+ public void onServicesDiscovered(BluetoothGatt x,int status){h.post(()->{if(closed)return;BluetoothGattService s=x.getService(UUID.fromString("0000fee0-0000-1000-8000-00805f9b34fb"));if(status!=0||s==null){fail("FEE0 fehlt");return;}tx=s.getCharacteristic(u("0016"));rx=s.getCharacteristic(u("0017"));raw=s.getCharacteristic(u("0002"));if(tx==null||rx==null){fail("Auth-Schnittstelle fehlt");return;}subscribe(rx);});}
+ public void onDescriptorWrite(BluetoothGatt x,BluetoothGattDescriptor d,int status){h.post(()->{if(closed)return;if(status!=0){fail("Notify Fehler "+status);return;}if(d.getCharacteristic().equals(rx))begin();else log.accept("Rohdaten-Notify aktiv; passiver Empfangstest, kein bestätigter Startbefehl");});}
+ public void onCharacteristicWrite(BluetoothGatt x,BluetoothGattCharacteristic c,int status){h.post(()->{if(closed)return;busy=false;if(status!=0)fail("Schreibfehler "+status);else pump();});}
+ public void onCharacteristicChanged(BluetoothGatt x,BluetoothGattCharacteristic c,byte[] v){byte[] b=v.clone();h.post(()->receive(c,b));}
+ public void onCharacteristicChanged(BluetoothGatt x,BluetoothGattCharacteristic c){byte[] v=c.getValue();if(v!=null){byte[] b=v.clone();h.post(()->receive(c,b));}}
+ };
+ void subscribe(BluetoothGattCharacteristic c){BluetoothGattDescriptor d=c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"));if(d==null||!g.setCharacteristicNotification(c,true)){fail("Notify nicht verfügbar");return;}d.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);if(!g.writeDescriptor(d))fail("Notify-Start fehlgeschlagen");}
+ static byte[] le(BigInteger n){byte[] b=n.toByteArray(),r=new byte[24];for(int i=0;i<Math.min(24,b.length);i++)r[i]=b[b.length-1-i];return r;}
+ static BigInteger number(byte[] a,int off){byte[] b=new byte[24];for(int i=0;i<24;i++)b[23-i]=a[off+i];return new BigInteger(1,b);}
+ void begin(){try{var p=SECNamedCurves.getByName("sect163r2");do{priv=new BigInteger(162,new SecureRandom());}while(priv.signum()==0);ECPoint q=p.getG().multiply(priv).normalize();byte[] b=new byte[52];b[0]=4;b[1]=2;b[3]=2;System.arraycopy(le(q.getAffineXCoord().toBigInteger()),0,b,4,24);System.arraycopy(le(q.getAffineYCoord().toBigInteger()),0,b,28,24);state=1;log.accept("ECDH-Schlüsselaustausch gestartet");send(b);}catch(Exception e){fail("ECDH Initialisierung fehlgeschlagen");}}
+ void send(byte[] b){int id=++handle&255;for(int off=0,count=0;off<b.length;count++){int hdr=count==0?11:5,n=Math.min(20-hdr,b.length-off);byte[] f=new byte[hdr+n];f[0]=3;f[1]=(byte)((count==0?1:0)|(off+n==b.length?6:0));f[3]=(byte)id;f[4]=(byte)count;if(count==0){f[5]=(byte)b.length;f[9]=(byte)0x82;}System.arraycopy(b,off,f,hdr,n);off+=n;enqueue(tx,f);}}
+ void enqueue(BluetoothGattCharacteristic c,byte[] b){targets.add(c);queue.add(b);pump();}
+ void pump(){if(closed||busy||queue.isEmpty())return;BluetoothGattCharacteristic c=targets.remove();byte[] b=queue.remove();c.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE);c.setValue(b);busy=true;if(!g.writeCharacteristic(c))fail("BLE Schreibstart fehlgeschlagen");}
+ void receive(BluetoothGattCharacteristic c,byte[] b){if(closed)return;if(c.equals(raw)&&state==3){packets++;if(packets<=10||packets%100==0)log.accept("Rohpaket "+packets+": "+b.length+" Bytes (Format unbestätigt)");return;}if(!c.equals(rx)||b.length<5||b[0]!=3)return;int flags=b[1]&255,id=b[3]&255,offset=5;if((flags&1)!=0){if(b.length<11)return;expected=(b[5]&255)|((b[6]&255)<<8)|((b[7]&255)<<16)|((b[8]&255)<<24);endpoint=(b[9]&255)|((b[10]&255)<<8);if(expected<0||expected>4096)return;buf=new ByteArrayOutputStream();inHandle=id;seq=0;offset=11;}if(buf==null||id!=inHandle||(b[4]&255)!=seq++)return;buf.write(b,offset,b.length-offset);if((flags&2)==0)return;byte[] payload=buf.toByteArray();buf=null;if((flags&4)!=0)enqueue(rx,new byte[]{4,0,(byte)id,1,0});if(endpoint==0x82&&(flags&8)==0&&payload.length==expected)auth(payload);}
+ static byte[] aes(byte[] k,byte[] b)throws Exception{Cipher c=Cipher.getInstance("AES/ECB/NoPadding");c.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(k,"AES"));return c.doFinal(b);}
+ void auth(byte[] b){try{if(b.length<3||b[0]!=16)return;if(b[2]!=1){fail("Auth abgelehnt, Status "+(b[2]&255));return;}if(state==1&&b[1]==4&&b.length==67){var p=SECNamedCurves.getByName("sect163r2");ECPoint q=p.getCurve().validatePoint(number(b,19),number(b,43));if(q.isInfinity()||!q.multiply(p.getN()).isInfinity())throw new IllegalArgumentException();byte[] shared=le(q.multiply(priv).normalize().getAffineXCoord().toBigInteger()),session=new byte[16];for(int i=0;i<16;i++)session[i]=(byte)(shared[i+8]^key[i]);byte[] rnd=Arrays.copyOfRange(b,3,19),out=new byte[33];out[0]=5;System.arraycopy(aes(key,rnd),0,out,1,16);System.arraycopy(aes(session,rnd),0,out,17,16);Arrays.fill(session,(byte)0);Arrays.fill(shared,(byte)0);state=2;send(out);log.accept("Challenge-Antwort gesendet");}else if(state==2&&b[1]==5){state=3;Arrays.fill(key,(byte)0);priv=null;log.accept("Authentifizierung erfolgreich");h.postDelayed(()->{if(!closed&&raw!=null)subscribe(raw);},500);}}catch(Exception e){fail("Authentifizierungsberechnung fehlgeschlagen");}}
+ void fail(String s){if(!closed){log.accept(s);close();}}
+ void close(){closed=true;h.removeCallbacksAndMessages(null);if(key!=null)Arrays.fill(key,(byte)0);priv=null;queue.clear();targets.clear();if(g!=null){try{g.disconnect();g.close();}catch(Exception ignored){}g=null;}}
 }
