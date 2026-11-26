@@ -6,12 +6,12 @@
     "appId": 9876142,
     "appName": "Sensor Probe",
     "version": {
-      "code": 4,
-      "name": "0.4.0"
+      "code": 5,
+      "name": "0.5.0"
     },
     "icon": "icon.png",
     "vender": "SleepMonitor",
-    "description": "Read-only API inventory"
+    "description": "Targeted sensor diagnostics"
   },
   "permissions": [],
   "runtime": {
