@@ -19,6 +19,7 @@ jobs:
           git -C "$RUNNER_TEMP/zmake" checkout v1.9.1
           pip install Pillow==10.4.0 qrcode==7.4.2
           python -c "from PIL import Image,ImageDraw; im=Image.new('RGBA',(64,64),(15,40,30,255)); d=ImageDraw.Draw(im); d.line((10,32,54,32),fill='white',width=4); d.line((32,10,32,54),fill='white',width=4); im.save('sensor-probe/assets/icon.png')"
+          rm -f sensor-probe/assets/.gitkeep
           PYTHONPATH="$RUNNER_TEMP/zmake" python -m zmake "$PWD/sensor-probe" </dev/null
           test -s sensor-probe/dist/sensor-probe.zip
           unzip -t sensor-probe/dist/sensor-probe.zip
