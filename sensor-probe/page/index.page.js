@@ -9,7 +9,7 @@
  var names=['ACTIVITY','SPORT','SLEEP','FACT activity','FACT stand','FACT step','API ACTIVITY']; var deep=null,deepArmed=false,previousXYZ=null,changes=0; var readers=[],unknown=[],idPos=0,armed=false;
  try{logger=DeviceRuntimeCore.HmLogger.getLogger('SensorProbe');}catch(e){}
  function log(s){s=String(s).slice(0,600);logLines.push(Date.now()+' '+s);if(logLines.length>600)logLines.shift();try{if(logger)logger.log(s);else console.log(s);}catch(e){}}
- function add(s){s=String(s);log(s);while(s.length>19){lines.push(s.slice(0,19));s=s.slice(19);}lines.push(s);if(lines.length>1200)lines.splice(0,8);}
+ function add(s){s=String(s);log(s);while(s.length>22){lines.push(s.slice(0,22));s=s.slice(22);}lines.push(s);if(lines.length>1200)lines.splice(0,8);}
  function save(){var fd=null;try{
  if(typeof hmFS==='undefined'||typeof hmFS.open!=='function'||typeof hmFS.write!=='function'||typeof hmFS.close!=='function')throw Error('FS unavailable');
  var str=logLines.join('\n')+'\n',buf=new ArrayBuffer(str.length),a=new Uint8Array(buf);for(var i=0;i<str.length;i++){var c=str.charCodeAt(i);a[i]=c<128?c:63;}
@@ -18,10 +18,10 @@
  var n=hmFS.write(fd,buf,0,a.length);if(n!==a.length)throw Error('write '+n+'/'+a.length);fileState='Saved '+n+' B';
  }catch(e){fileState='FS error';log(String(e));}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){fileState='Close error';}}}
  function label(y,h,s,size,color){return hmUI.createWidget(hmUI.widget.TEXT,{x:8,y:y,w:176,h:h,text:s,text_size:size,color:color,align_h:hmUI.align.CENTER_H,text_style:hmUI.text_style.WRAP});}
- label(35,32,'Sensor Probe 1.0',18,0xffffff);
+ label(35,32,'Sensor Probe 1.1',18,0xffffff);
  var header=label(70,30,'Ready',16,0x55ff88),widgets=[];
- for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',14,0xffffff));
- function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,19));}
+ for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',12,0xffffff));
+ function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,22));}
  function render(){var total=Math.max(1,Math.ceil(lines.length/8));pos=Math.max(0,Math.min(pos,total-1));show((pos+1)+'/'+total,lines.slice(pos*8,pos*8+8));}
  function describe(v){try{var s=JSON.stringify(v);return s===undefined?String(v):s.slice(0,400);}catch(e){return '[unserializable]';}}
  function finite(n){return typeof n==='number'&&isFinite(n);}
@@ -61,6 +61,25 @@
  var lo=used.length?Math.min.apply(null,used):10,hi=used.length?Math.max.apply(null,used):30;for(var i=Math.max(0,lo-2);i<=Math.min(127,hi+4);i++)if(used.indexOf(i)<0)unknown.push(i);
  add('Unknown IDs '+unknown.length);coreInventory();save();render();}
  function testId(){if(!unknown.length){add('No unknown IDs');render();return;}var id=unknown[idPos%unknown.length];if(!armed){armed=true;show('Native ID risk',['ID '+id,'Tap ID again','May crash app']);return;}armed=false;idPos++;log('Testing ID '+id);save();try{var o=hmSensor.createSensor(id);add('ID '+id+' '+(o?'object':'null'));if(o){inspect(o,'ID '+id,1,[]);var p=Object.getPrototypeOf(o);if(p)Object.getOwnPropertyNames(p).forEach(function(k){if(k!=='constructor')add('Method '+k);});}}catch(e){add('ID error '+e);}save();pos=Math.floor((lines.length-1)/8);render();}
+ function constructorScan(){
+ lines=[];pos=0;deepArmed=false;
+ function emitSource(fn,name){
+ if(typeof fn!=='function')return;
+ add(name+' args '+fn.length);
+ try{var src=Function.prototype.toString.call(fn);if(src.indexOf('[native code]')>=0){add('Native source hidden');return;}add('Source '+src.length);add(src.slice(0,2400));if(src.length>2400)add('Source truncated');}catch(e){add('Source error '+e);}
+ }
+ ['HmSensorApi','SensorWidgetFactory'].forEach(function(k){try{var C=DeviceRuntimeCore[k];emitSource(C,k);if(C&&C.prototype){['createSensor','deleteSensor','activity','stand','step'].forEach(function(m){var d=Object.getOwnPropertyDescriptor(C.prototype,m);if(d)emitSource(d.value,m);});}}catch(e){add(k+' '+e);}});
+ var seen=[],queue=[{o:currentApp,p:'App',d:0},{o:currentModule,p:'Module',d:0},{o:DeviceRuntimeCore,p:'Core',d:0},{o:hmSensor,p:'hmSensor',d:0}],budget=500;
+ while(queue.length&&budget>0&&seen.length<100){var q=queue.shift(),o=q.o;if(!o||(typeof o!=='object'&&typeof o!=='function')||seen.indexOf(o)>=0)continue;seen.push(o);
+ try{var ks=Object.getOwnPropertyNames(o);if(q.d===0)add(q.p+' keys '+ks.length);
+ for(var i=0;i<ks.length&&budget>0;i++){budget--;var k=ks[i],p=q.p+'.'+k;if(k==='caller'||k==='arguments'||k==='constructor')continue;var d=Object.getOwnPropertyDescriptor(o,k);if(!d)continue;var v=d.value;
+ if(q.d===0||/sensor|runtime|context|factory|accel|gyro|motion|gravity|orient|tilt|position|native|widget/i.test(k))add(p+' '+(d.get?'getter':typeof v));
+ if(q.d<4&&v&&(typeof v==='object'||typeof v==='function')&&queue.length<200)queue.push({o:v,p:p,d:q.d+1});
+ }
+ }catch(e){log(q.p+' '+e);}
+ }
+ add('Objects '+seen.length);add('Budget left '+budget);add('No constructors called');save();render();
+ }
  function deepStart(n){
  var factory=n.indexOf('FACT ')===0, key=factory?n.slice(5):'createSensor';
  var C=DeviceRuntimeCore[factory?'SensorWidgetFactory':'HmSensorApi'];
@@ -105,7 +124,7 @@
  button(100,305,80,'NEXT',function(){if(!running){pos++;render();}});
  button(12,349,80,'SELECT',function(){if(running)return;deepArmed=false;selected=(selected+1)%names.length;show('Selected',[names[selected],'Press START','Test one sensor','at a time',fileState]);});
  button(100,349,80,'RUN/END',function(){if(running){stop();add('Events: '+events);add('Samples: '+samples);add('Last: '+last);if(candidate)add('XYZ? '+candidate.join(','));save();add(fileState);pos=Math.floor((lines.length-1)/8);render();}else start();});
- button(12,393,168,'CORE SCAN',function(){if(!running){deepArmed=false;lines=[];pos=0;coreInventory();save();render();}}); inventory();
+ button(12,393,168,'CTOR SCAN',function(){if(!running)constructorScan();}); constructorScan();
  },onDestroy:function(){cleanup();}
  });
 })();
