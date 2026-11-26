@@ -1,0 +1,29 @@
+name: Build Sensor Probe
+on:
+  push:
+    branches: [main]
+    paths: ['sensor-probe/**', '.github/workflows/sensor-probe.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: |
+          git clone https://github.com/melianmiko/zmake.git "$RUNNER_TEMP/zmake"
+          git -C "$RUNNER_TEMP/zmake" checkout v1.9.1
+          pip install Pillow==10.4.0 qrcode==7.4.2
+          python -c "from PIL import Image,ImageDraw; im=Image.new('RGBA',(64,64),(15,40,30,255)); d=ImageDraw.Draw(im); d.line((10,32,54,32),fill='white',width=4); d.line((32,10,32,54),fill='white',width=4); im.save('sensor-probe/assets/icon.png')"
+          PYTHONPATH="$RUNNER_TEMP/zmake" python -m zmake "$PWD/sensor-probe" </dev/null
+          test -s sensor-probe/dist/sensor-probe.zip
+          unzip -t sensor-probe/dist/sensor-probe.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SleepMonitor-SensorProbe-0.1
+          path: sensor-probe/dist/sensor-probe.zip
+          if-no-files-found: error

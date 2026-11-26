@@ -1,0 +1,1 @@
+(() => {var __$$app$$__ = __$$hmAppManager$$__.currentApp; __$$app$$__.app = DeviceRuntimeCore.App({globalData:{},onCreate(){},onDestroy(){}});})();

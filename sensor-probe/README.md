@@ -1,0 +1,2 @@
+# Sensor Probe 0.1
+Experimental read-only Zepp OS 1 diagnostic for Mi Band 7. Uses ZMake v1.9.1. Enumerates exposed IDs; candidate names and XYZ methods are hypotheses, not documented support. No synthetic data or firmware updates. Tap Read XYZ for a single sample if a candidate exists. Installation package compatibility with Gadgetbridge remains untested. Download artifact and extract outer Actions ZIP before opening inner package. App ID is locally chosen, not assigned by Zepp.

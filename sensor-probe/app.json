@@ -1,0 +1,63 @@
+{
+  "configVersion": "v2",
+  "app": {
+    "appIdType": 0,
+    "appType": "app",
+    "appId": 9876142,
+    "appName": "Sensor Probe",
+    "version": {
+      "code": 1,
+      "name": "0.1.0"
+    },
+    "icon": "icon.png",
+    "vender": "SleepMonitor",
+    "description": "Read-only sensor diagnostic"
+  },
+  "permissions": [],
+  "runtime": {
+    "apiVersion": {
+      "compatible": "1.0.0",
+      "target": "1.0.1",
+      "minVersion": "1.0.0"
+    }
+  },
+  "i18n": {},
+  "debug": false,
+  "platforms": [
+    {
+      "name": "l66_260",
+      "deviceSource": 260
+    },
+    {
+      "name": "l66_261",
+      "deviceSource": 261
+    },
+    {
+      "name": "l66_262",
+      "deviceSource": 262
+    },
+    {
+      "name": "l66_263",
+      "deviceSource": 263
+    },
+    {
+      "name": "l66_264",
+      "deviceSource": 264
+    },
+    {
+      "name": "l66_265",
+      "deviceSource": 265
+    },
+    {
+      "name": "l66_266",
+      "deviceSource": 266
+    }
+  ],
+  "module": {
+    "page": {
+      "pages": [
+        "page/index"
+      ]
+    }
+  }
+}
