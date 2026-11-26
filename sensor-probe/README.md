@@ -1,2 +1,2 @@
-# Sensor Probe 0.2
-Startup and touch diagnostic only. No sensor access. Uses Zepp OS 1 page build lifecycle and .page route. ZMake packages JavaScript source, not native bytecode; device execution not verified. Same app ID as 0.1, version code 2. Expected APP RUNNING and Count increment on TEST. Reference: https://github.com/mettiuss/bus and https://mmk.pw/en/posts/sb7_dev/.
+# Sensor Probe 0.3
+Based on device-tested 0.2 startup and packaging. START enumerates exposed hmSensor IDs and logs them to console; candidate names and getCurrent/getXYZ are experimental, not confirmed Mi Band 7 APIs. Only finite numeric x/y/z are displayed; units unknown. Polling target 500 ms while page active. STOP and page destruction stop polling. No background recording or BLE export. No firmware changes. Same app ID, version code 3.
