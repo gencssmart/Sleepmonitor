@@ -27,6 +27,6 @@ jobs:
           unzip -t sensor-probe/dist/sensor-probe-app.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: SleepMonitor-SensorProbe-1.3
+          name: SleepMonitor-SensorProbe-1.4
           path: sensor-probe/dist/sensor-probe-app.zip
           if-no-files-found: error
