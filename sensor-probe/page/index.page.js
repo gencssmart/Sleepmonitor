@@ -6,7 +6,7 @@
  onInit:function(){},
  build:function(){
  var lines=[],pos=0,live=null,running=false,session=0,sensors=[],events=0,samples=0,last='',candidate=null,source='',logLines=[],fileState='Not saved',logger=null,selected=0;
- var names=['ACTIVITY','SPORT','SLEEP','FACT activity','FACT stand','FACT step','API ACTIVITY']; var deep=null,deepArmed=false,previousXYZ=null,changes=0; var readers=[],unknown=[],idPos=0,armed=false;
+ var names=['ID 8','ID 9','ID 36','ID 37','ID 38','ID 39','ACTIVITY','SPORT','SLEEP','FACT activity','FACT stand','FACT step','API ACTIVITY']; var deep=null,deepArmed=false,previousXYZ=null,changes=0; var readers=[],unknown=[],idPos=0,armed=false;
  try{logger=DeviceRuntimeCore.HmLogger.getLogger('SensorProbe');}catch(e){}
  function log(s){s=String(s).slice(0,600);logLines.push(Date.now()+' '+s);if(logLines.length>600)logLines.shift();try{if(logger)logger.log(s);else console.log(s);}catch(e){}}
  function add(s){s=String(s);log(s);while(s.length>22){lines.push(s.slice(0,22));s=s.slice(22);}lines.push(s);if(lines.length>1200)lines.splice(0,8);}
@@ -18,7 +18,7 @@
  var n=hmFS.write(fd,buf,0,a.length);if(n!==a.length)throw Error('write '+n+'/'+a.length);fileState='Saved '+n+' B';
  }catch(e){fileState='FS error';log(String(e));}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){fileState='Close error';}}}
  function label(y,h,s,size,color){return hmUI.createWidget(hmUI.widget.TEXT,{x:8,y:y,w:176,h:h,text:s,text_size:size,color:color,align_h:hmUI.align.CENTER_H,text_style:hmUI.text_style.WRAP});}
- label(35,32,'Sensor Probe 1.2',18,0xffffff);
+ label(35,32,'Sensor Probe 1.3',18,0xffffff);
  var header=label(70,30,'Ready',16,0x55ff88),widgets=[];
  for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',12,0xffffff));
  function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,22));}
@@ -26,7 +26,7 @@
  function describe(v){try{var s=JSON.stringify(v);return s===undefined?String(v):s.slice(0,400);}catch(e){return '[unserializable]';}}
  function finite(n){return typeof n==='number'&&isFinite(n);}
  function xyz(v,depth,seen){if(!v||typeof v!=='object'||depth<0||seen.indexOf(v)>=0||seen.length>=40)return null;seen.push(v);
- try{var sets=[['x','y','z'],['X','Y','Z'],['accX','accY','accZ'],['accelX','accelY','accelZ']];for(var j=0;j<sets.length;j++){var k=sets[j],a=[v[k[0]],v[k[1]],v[k[2]]];if(a.every(finite))return a;}
+ try{if((Array.isArray(v)||(typeof ArrayBuffer.isView==='function'&&ArrayBuffer.isView(v)))&&v.length===3&&finite(v[0])&&finite(v[1])&&finite(v[2]))return [v[0],v[1],v[2]];var sets=[['x','y','z'],['X','Y','Z'],['accX','accY','accZ'],['accelX','accelY','accelZ']];for(var j=0;j<sets.length;j++){var k=sets[j],a=[v[k[0]],v[k[1]],v[k[2]]];if(a.every(finite))return a;}
  var keys=Object.keys(v);for(var i=0;i<Math.min(keys.length,24);i++){var r=xyz(v[keys[i]],depth-1,seen);if(r)return r;}}catch(e){}return null;}
  function record(n,v){last=describe(v);var a=xyz(v,4,[]);if(a){if(previousXYZ&&a.some(function(v,i){return v!==previousXYZ[i];}))changes++;previousXYZ=a.slice();candidate=a;source=n;}log(n+' '+last);}
  function inspect(root,path,depth,seen){
@@ -116,17 +116,22 @@
  function deepPoll(n,o){record(n+' object',o);if(!o)return;var keys=['getActivityInfo','getCurrent','getData','getValue','getAcceleration','getOrientation','getGravity'];for(var i=0;i<keys.length;i++){var k=keys[i];try{if(typeof o[k]==='function'&&o[k].length===0)record(n+' '+k,o[k]());}catch(e){log(k+' '+e);}}
  try{if(typeof o.getX==='function'&&typeof o.getY==='function'&&typeof o.getZ==='function'&&o.getX.length===0&&o.getY.length===0&&o.getZ.length===0)record(n+' axes',{x:o.getX(),y:o.getY(),z:o.getZ()});}catch(e){log('axes '+e);}
  }
+ function journal(id,stage){
+ var fd=null;try{var str=String(id)+' '+stage+' '+Date.now(),a=new Uint8Array(str.length);for(var i=0;i<str.length;i++)a[i]=str.charCodeAt(i);
+ fd=hmFS.open('sensor-id-last.txt',hmFS.O_WRONLY|hmFS.O_CREAT|hmFS.O_TRUNC);if(fd<0)throw Error('journal open');if(hmFS.write(fd,a.buffer,0,a.length)!==a.length)throw Error('journal write');hmFS.close(fd);fd=null;return true;
+ }catch(e){log('Journal '+e);return false;}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){}}}
+ function inventorySensor(o){var p=o,seen=[];for(var j=0;j<4&&p&&p!==Object.prototype;j++){var ks=Object.getOwnPropertyNames(p);for(var i=0;i<ks.length;i++){var k=ks[i];if(k==='constructor'||seen.indexOf(k)>=0)continue;seen.push(k);var d=Object.getOwnPropertyDescriptor(p,k);if(d)add(k+' '+(d.get?'getter':typeof d.value)+(typeof d.value==='function'?' args '+d.value.length:''));}p=Object.getPrototypeOf(p);}}
  function display(){var a=candidate;show('LIVE '+names[selected],[ 'Events: '+events,'Samples: '+samples,a?'XYZ? changes '+changes:'No XYZ yet',a?'X: '+a[0]:last.slice(0,19),a?'Y: '+a[1]:last.slice(19,38),a?'Z: '+a[2]:last.slice(38,57),a?source:fileState,'STOP to save']);}
  function stop(){running=false;session++;if(live!==null){try{timer.stopTimer(live);}catch(e){}live=null;}
  for(var i=0;i<sensors.length;i++){var s=sensors[i];if(s.started){try{s.o.stop();}catch(e){log('stop '+e);}s.started=false;}for(var j=0;j<s.listeners.length;j++){var l=s.listeners[j];try{if(typeof s.o.removeEventListener==='function')s.o.removeEventListener(l.id,l.fn);}catch(e){log('remove '+e);}}s.listeners=[];}
- if(deep){try{log('Deep session ended; native ownership unknown');}catch(e){log('delete '+e);}deep=null;}
+ if(names[selected].indexOf('ID ')===0)journal(Number(names[selected].slice(3)),'session ended');if(deep){try{log('Deep session ended; native ownership unknown');}catch(e){log('delete '+e);}deep=null;}
  }
  cleanup=function(){cancelScan();if(running){stop();save();}};
- function start(){if(running||scanTimer!==null)return;var mode=names[selected];if(/^(FACT |API )/.test(mode)&&!deepArmed){deepArmed=true;show('Native call risk',[mode,'Tap RUN again','May crash app']);return;}deepArmed=false;previousXYZ=null;changes=0;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;
- try{if(/^(FACT |API )/.test(n)){o=deepStart(n);live=timer.createTimer(100,1000,function(){if(!running||session!==token)return;samples++;deepPoll(n,o);display();if(samples%30===0)save();});display();return;}o=hmSensor.createSensor(hmSensor.id[n]);if(!o)throw Error('null sensor');var s={o:o,started:false,listeners:[]};sensors=[s];
+ function start(){if(running||scanTimer!==null)return;var mode=names[selected];if(/^(FACT |API |ID )/.test(mode)&&!deepArmed){deepArmed=true;show('Native call risk',[mode,'Tap RUN again','May crash app']);return;}deepArmed=false;previousXYZ=null;changes=0;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;
+ try{if(/^(FACT |API )/.test(n)){o=deepStart(n);live=timer.createTimer(100,1000,function(){if(!running||session!==token)return;samples++;deepPoll(n,o);display();if(samples%30===0)save();});display();return;}var numeric=n.indexOf('ID ')===0,id=numeric?Number(n.slice(3)):hmSensor.id[n];if(numeric){if(!journal(id,'before create'))throw Error('Journal failed');log('Testing ID '+id);save();}o=hmSensor.createSensor(id);if(numeric)journal(id,'create returned');if(!o)throw Error('null sensor');var s={o:o,started:false,listeners:[]};sensors=[s];if(numeric){inventorySensor(o);save();}
  var en=['CHANGE','DELAY'];try{Object.getOwnPropertyNames(hmSensor.event).forEach(function(k){if(/motion|accel|gravity|orient|gyro|tilt/i.test(k)&&en.indexOf(k)<0)en.push(k);});}catch(e){}for(var j=0;j<en.length;j++){(function(key){try{var id=hmSensor.event[key];if(typeof id!=='number'||typeof o.addEventListener!=='function')return;var fn=function(){if(!running||session!==token)return;events++;var args=[];for(var k=0;k<arguments.length;k++)args.push(arguments[k]);record(n+' '+key,args);display();};var ret=o.addEventListener(id,fn);log('Listener result '+describe(ret));s.listeners.push({id:id,fn:fn});log(n+' registered '+key+' '+id);}catch(e){log(key+' error '+e);}})(en[j]);}
- if(typeof o.start==='function'){try{o.start();s.started=true;log(n+' start returned');}catch(e){log('start error '+e);}}
- function tick(){if(!running||session!==token)return;samples++;try{if(n==='ACTIVITY'&&typeof o.getActivityInfo==='function')record(n+' poll',o.getActivityInfo());else if(n==='SLEEP'&&typeof o.getBasicInfo==='function')record(n+' basic',o.getBasicInfo());else if(n==='SPORT'&&samples===1&&typeof o.getSportRecord==='function')record(n+' record',o.getSportRecord());else if(names.indexOf(n)>=3){var getters=['getCurrent','getData','getValue','getAcceleration','getOrientation','getGravity'];for(var g=0;g<getters.length;g++){var k=getters[g];if(typeof o[k]==='function'){try{record(n+' '+k,o[k]());}catch(e){log(k+' '+e);}}}if(typeof o.getX==='function'&&typeof o.getY==='function'&&typeof o.getZ==='function')record(n+' axes',{x:o.getX(),y:o.getY(),z:o.getZ()});}}catch(e){last=String(e);log('poll error '+e);}display();if(samples%30===0)save();}
+ if(typeof o.start==='function'&&(!numeric||o.start.length===0)){try{o.start();s.started=true;log(n+' start returned');}catch(e){log('start error '+e);}}
+ function tick(){if(!running||session!==token)return;samples++;try{if(n==='ACTIVITY'&&typeof o.getActivityInfo==='function')record(n+' poll',o.getActivityInfo());else if(n==='SLEEP'&&typeof o.getBasicInfo==='function')record(n+' basic',o.getBasicInfo());else if(n==='SPORT'&&samples===1&&typeof o.getSportRecord==='function')record(n+' record',o.getSportRecord());else if(numeric){var getters=['getCurrent','getData','getValue','getAcceleration','getOrientation','getGravity'];for(var g=0;g<getters.length;g++){var k=getters[g];if(typeof o[k]==='function'&&o[k].length===0){try{record(n+' '+k,o[k]());}catch(e){log(k+' '+e);}}}if(typeof o.getX==='function'&&typeof o.getY==='function'&&typeof o.getZ==='function'&&o.getX.length===0&&o.getY.length===0&&o.getZ.length===0)record(n+' axes',{x:o.getX(),y:o.getY(),z:o.getZ()});}}catch(e){last=String(e);log('poll error '+e);}display();if(samples%30===0)save();}
  live=timer.createTimer(100,1000,tick);display();
  }catch(e){stop();add('Start error '+e);save();render();}}
  function button(x,y,w,t,f){hmUI.createWidget(hmUI.widget.BUTTON,{x:x,y:y,w:w,h:38,text:t,text_size:16,normal_color:0x225599,press_color:0x448855,click_func:f});}
@@ -134,7 +139,7 @@
  button(100,305,80,'NEXT',function(){if(!running){pos++;render();}});
  button(12,349,80,'SELECT',function(){if(running||scanTimer!==null)return;deepArmed=false;selected=(selected+1)%names.length;show('Selected',[names[selected],'Press START','Test one sensor','at a time',fileState]);});
  button(100,349,80,'RUN/END',function(){if(running){stop();add('Events: '+events);add('Samples: '+samples);add('Last: '+last);if(candidate)add('XYZ? '+candidate.join(','));save();add(fileState);pos=Math.floor((lines.length-1)/8);render();}else start();});
- button(12,393,168,'DEEP SCAN',function(){if(running)return;if(scanTimer!==null){cancelScan();add('Scan cancelled');save();render();}else constructorScan();}); constructorScan();
+ button(12,393,168,'DEEP SCAN',function(){if(running)return;if(scanTimer!==null){cancelScan();add('Scan cancelled');save();render();}else constructorScan();}); show('Selected',[names[selected],'RUN twice to test','Native crash possible','SELECT next sensor']);
  },onDestroy:function(){cleanup();}
  });
 })();
