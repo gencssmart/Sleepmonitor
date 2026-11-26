@@ -1,2 +1,2 @@
-# Sensor Probe 0.7
-Select ACTIVITY (default), SPORT or SLEEP. START/STOP runs one sensor at a time; stop saves a bounded local log to sensor-probe.log if hmFS supports the expected API. CHANGE/DELAY callbacks and getter results are experimental; named XYZ triples are candidates, not validated acceleration. No unknown sensor IDs are invoked. No phone export yet. Existing BIN packaging retained.
+# Sensor Probe 0.9
+Read-only descriptor inventory of HmSensorApi and SensorWidgetFactory, including prototypes and nested objects. CORE SCAN repeats the inventory. No unknown native constructors or getters are invoked by the core scan. Existing named sensor live tests and unverified XYZ detection remain. Unknown ID test button removed after six null results in 0.8. Local bounded log; no phone export. Packaging unchanged.

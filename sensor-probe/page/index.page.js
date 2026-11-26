@@ -8,8 +8,8 @@
  var lines=[],pos=0,live=null,running=false,session=0,sensors=[],events=0,samples=0,last='',candidate=null,source='',logLines=[],fileState='Not saved',logger=null,selected=0;
  var names=['ACTIVITY','SPORT','SLEEP']; var readers=[],unknown=[],idPos=0,armed=false;
  try{logger=DeviceRuntimeCore.HmLogger.getLogger('SensorProbe');}catch(e){}
- function log(s){s=String(s).slice(0,600);logLines.push(Date.now()+' '+s);if(logLines.length>120)logLines.shift();try{if(logger)logger.log(s);else console.log(s);}catch(e){}}
- function add(s){s=String(s);log(s);while(s.length>19){lines.push(s.slice(0,19));s=s.slice(19);}lines.push(s);if(lines.length>240)lines.splice(0,8);}
+ function log(s){s=String(s).slice(0,600);logLines.push(Date.now()+' '+s);if(logLines.length>600)logLines.shift();try{if(logger)logger.log(s);else console.log(s);}catch(e){}}
+ function add(s){s=String(s);log(s);while(s.length>19){lines.push(s.slice(0,19));s=s.slice(19);}lines.push(s);if(lines.length>1200)lines.splice(0,8);}
  function save(){var fd=null;try{
  if(typeof hmFS==='undefined'||typeof hmFS.open!=='function'||typeof hmFS.write!=='function'||typeof hmFS.close!=='function')throw Error('FS unavailable');
  var str=logLines.join('\n')+'\n',buf=new ArrayBuffer(str.length),a=new Uint8Array(buf);for(var i=0;i<str.length;i++){var c=str.charCodeAt(i);a[i]=c<128?c:63;}
@@ -18,7 +18,7 @@
  var n=hmFS.write(fd,buf,0,a.length);if(n!==a.length)throw Error('write '+n+'/'+a.length);fileState='Saved '+n+' B';
  }catch(e){fileState='FS error';log(String(e));}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){fileState='Close error';}}}
  function label(y,h,s,size,color){return hmUI.createWidget(hmUI.widget.TEXT,{x:8,y:y,w:176,h:h,text:s,text_size:size,color:color,align_h:hmUI.align.CENTER_H,text_style:hmUI.text_style.WRAP});}
- label(35,32,'Sensor Probe 0.8',18,0xffffff);
+ label(35,32,'Sensor Probe 0.9',18,0xffffff);
  var header=label(70,30,'Ready',16,0x55ff88),widgets=[];
  for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',14,0xffffff));
  function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,19));}
@@ -37,11 +37,29 @@
  if(d.value&&typeof d.value==='object')inspect(d.value,p,depth-1,seen);
  }catch(e){log(p+' '+e);}}
  }
+ function coreInventory(){
+ var seen=[],budget=180;
+ function walk(o,path,depth){
+ if(!o||(typeof o!=='object'&&typeof o!=='function')||depth<0||seen.indexOf(o)>=0||budget<=0)return;
+ seen.push(o);var keys;try{keys=Object.getOwnPropertyNames(o);}catch(e){add(path+' error '+e);return;}
+ add(path+' keys '+keys.length);
+ for(var i=0;i<keys.length&&budget>0;i++){var k=keys[i];if(k==='constructor'||k==='caller'||k==='arguments')continue;budget--;try{
+ var d=Object.getOwnPropertyDescriptor(o,k);if(!d)continue;
+ var v=d.value,t=d.get||d.set?'accessor':typeof v;
+ add(k+': '+t+(t==='number'?' '+v:''));
+ if(/accel|gravity|motion|orient|gyro|tilt|position/i.test(k))add('MATCH '+path+'.'+k);
+ if(k==='prototype'||(v&&typeof v==='object'))walk(v,path+'.'+k,depth-1);
+ }catch(e){add(k+' error '+e);}}
+ try{var proto=Object.getPrototypeOf(o);if(proto&&proto!==Object.prototype&&proto!==Function.prototype)walk(proto,path+' proto',depth-1);}catch(e){add('Proto error '+e);}
+ }
+ ['HmSensorApi','SensorWidgetFactory'].forEach(function(k){try{var d=Object.getOwnPropertyDescriptor(DeviceRuntimeCore,k);if(d&&d.value){add('Core '+k);walk(d.value,k,3);}else add(k+' unavailable');}catch(e){add(k+' error '+e);}});
+ add('Core scan done');add('No native calls');add('Budget left '+budget);
+ }
  function inventory(){lines=[];pos=0;var seen=[];inspect(DeviceRuntimeCore,'Core',3,seen);inspect(hmSensor,'Sensor',2,seen);inspect(hmSetting,'Setting',2,seen);
  var used=[];try{Object.getOwnPropertyNames(hmSensor.id).forEach(function(k){var v=hmSensor.id[k];if(typeof v==='number'){used.push(v);if(/accel|gravity|motion|orient|gyro|tilt/i.test(k)){names.push(k);add('Named '+k+' '+v);}}});}catch(e){add('IDs '+e);}
  try{Object.getOwnPropertyNames(hmSensor.event).forEach(function(k){add('Event '+k+' '+hmSensor.event[k]);});}catch(e){add('Events '+e);}
  var lo=used.length?Math.min.apply(null,used):10,hi=used.length?Math.max.apply(null,used):30;for(var i=Math.max(0,lo-2);i<=Math.min(127,hi+4);i++)if(used.indexOf(i)<0)unknown.push(i);
- add('Unknown IDs '+unknown.length);add('ID test: two taps');add('Native crash risk');save();render();}
+ add('Unknown IDs '+unknown.length);coreInventory();save();render();}
  function testId(){if(!unknown.length){add('No unknown IDs');render();return;}var id=unknown[idPos%unknown.length];if(!armed){armed=true;show('Native ID risk',['ID '+id,'Tap ID again','May crash app']);return;}armed=false;idPos++;log('Testing ID '+id);save();try{var o=hmSensor.createSensor(id);add('ID '+id+' '+(o?'object':'null'));if(o){inspect(o,'ID '+id,1,[]);var p=Object.getPrototypeOf(o);if(p)Object.getOwnPropertyNames(p).forEach(function(k){if(k!=='constructor')add('Method '+k);});}}catch(e){add('ID error '+e);}save();pos=Math.floor((lines.length-1)/8);render();}
  function display(){var a=candidate;show('LIVE '+names[selected],[ 'Events: '+events,'Samples: '+samples,a?'XYZ unverified':'No XYZ yet',a?'X: '+a[0]:last.slice(0,19),a?'Y: '+a[1]:last.slice(19,38),a?'Z: '+a[2]:last.slice(38,57),a?source:fileState,'STOP to save']);}
  function stop(){running=false;session++;if(live!==null){try{timer.stopTimer(live);}catch(e){}live=null;}
@@ -60,7 +78,7 @@
  button(100,305,80,'NEXT',function(){if(!running){pos++;render();}});
  button(12,349,80,'SELECT',function(){if(running)return;selected=(selected+1)%names.length;show('Selected',[names[selected],'Press START','Test one sensor','at a time',fileState]);});
  button(100,349,80,'RUN/END',function(){if(running){stop();add('Events: '+events);add('Samples: '+samples);add('Last: '+last);if(candidate)add('XYZ? '+candidate.join(','));save();add(fileState);pos=Math.floor((lines.length-1)/8);render();}else start();});
- button(12,393,168,'ID TEST',function(){if(!running)testId();}); inventory();
+ button(12,393,168,'CORE SCAN',function(){if(!running){lines=[];pos=0;coreInventory();save();render();}}); inventory();
  },onDestroy:function(){cleanup();}
  });
 })();
