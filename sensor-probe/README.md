@@ -3,3 +3,6 @@ DEEP SCAN runs incrementally (40 work steps per timer tick), up to 1000 processe
 
 ## 1.3
 SELECT cycles ID 8, 9, 36, 37, 38, 39 and existing modes. RUN twice confirms native risk. Persistent sensor-id-last.txt records create attempt and session end; local log records method descriptors, callbacks and zero-argument allowlisted getters. Numeric triples are candidates, not verified acceleration. Deep scan retains BLE descriptor inspection; no phone export. Native crashes cannot be caught reliably.
+
+## 1.4
+SELECT cycles to BLE INFO (passive descriptors and arities), FS EXPORT (local log and FS capability inventory only), RESULTS (per-ID results for current app session). RUN opens selected diagnostic. Existing deep scan and live sensor tests retained. No BLE connection or phone transfer implemented; no speculative BLE native calls. Results reset on app restart; log remains bounded. XYZ candidates are not verified acceleration.
