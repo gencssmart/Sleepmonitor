@@ -6,8 +6,8 @@
     "appId": 9876142,
     "appName": "Sensor Probe",
     "version": {
-      "code": 10,
-      "name": "1.0.0"
+      "code": 11,
+      "name": "1.1.0"
     },
     "icon": "icon.png",
     "vender": "SleepMonitor",
