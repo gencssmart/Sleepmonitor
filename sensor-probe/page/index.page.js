@@ -6,7 +6,7 @@
  onInit:function(){},
  build:function(){
  var lines=[],pos=0,live=null,running=false,session=0,sensors=[],events=0,samples=0,last='',candidate=null,source='',logLines=[],fileState='Not saved',logger=null,selected=0;
- var names=['ACTIVITY','SPORT','SLEEP'];
+ var names=['ACTIVITY','SPORT','SLEEP']; var readers=[],unknown=[],idPos=0,armed=false;
  try{logger=DeviceRuntimeCore.HmLogger.getLogger('SensorProbe');}catch(e){}
  function log(s){s=String(s).slice(0,600);logLines.push(Date.now()+' '+s);if(logLines.length>120)logLines.shift();try{if(logger)logger.log(s);else console.log(s);}catch(e){}}
  function add(s){s=String(s);log(s);while(s.length>19){lines.push(s.slice(0,19));s=s.slice(19);}lines.push(s);if(lines.length>240)lines.splice(0,8);}
@@ -18,7 +18,7 @@
  var n=hmFS.write(fd,buf,0,a.length);if(n!==a.length)throw Error('write '+n+'/'+a.length);fileState='Saved '+n+' B';
  }catch(e){fileState='FS error';log(String(e));}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){fileState='Close error';}}}
  function label(y,h,s,size,color){return hmUI.createWidget(hmUI.widget.TEXT,{x:8,y:y,w:176,h:h,text:s,text_size:size,color:color,align_h:hmUI.align.CENTER_H,text_style:hmUI.text_style.WRAP});}
- label(35,32,'Sensor Probe 0.7',18,0xffffff);
+ label(35,32,'Sensor Probe 0.8',18,0xffffff);
  var header=label(70,30,'Ready',16,0x55ff88),widgets=[];
  for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',14,0xffffff));
  function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,19));}
@@ -29,6 +29,20 @@
  try{var sets=[['x','y','z'],['X','Y','Z'],['accX','accY','accZ'],['accelX','accelY','accelZ']];for(var j=0;j<sets.length;j++){var k=sets[j],a=[v[k[0]],v[k[1]],v[k[2]]];if(a.every(finite))return a;}
  var keys=Object.keys(v);for(var i=0;i<Math.min(keys.length,24);i++){var r=xyz(v[keys[i]],depth-1,seen);if(r)return r;}}catch(e){}return null;}
  function record(n,v){last=describe(v);var a=xyz(v,4,[]);if(a){candidate=a;source=n;}log(n+' '+last);}
+ function inspect(root,path,depth,seen){
+ if(!root||(typeof root!=='object'&&typeof root!=='function')||depth<0||seen.indexOf(root)>=0||seen.length>=80)return;
+ seen.push(root);var keys=[];try{keys=Object.getOwnPropertyNames(root);}catch(e){add(path+' error '+e);return;}
+ for(var i=0;i<Math.min(keys.length,100);i++){var k=keys[i],p=path+'.'+k,d;try{d=Object.getOwnPropertyDescriptor(root,k);if(!d)continue;
+ if(/accel|gravity|motion|orient|gyro|sensor|event|position|tilt|wrist/i.test(k))add(p+' '+(d.get?'getter':typeof d.value));
+ if(d.value&&typeof d.value==='object')inspect(d.value,p,depth-1,seen);
+ }catch(e){log(p+' '+e);}}
+ }
+ function inventory(){lines=[];pos=0;var seen=[];inspect(DeviceRuntimeCore,'Core',3,seen);inspect(hmSensor,'Sensor',2,seen);inspect(hmSetting,'Setting',2,seen);
+ var used=[];try{Object.getOwnPropertyNames(hmSensor.id).forEach(function(k){var v=hmSensor.id[k];if(typeof v==='number'){used.push(v);if(/accel|gravity|motion|orient|gyro|tilt/i.test(k)){names.push(k);add('Named '+k+' '+v);}}});}catch(e){add('IDs '+e);}
+ try{Object.getOwnPropertyNames(hmSensor.event).forEach(function(k){add('Event '+k+' '+hmSensor.event[k]);});}catch(e){add('Events '+e);}
+ var lo=used.length?Math.min.apply(null,used):10,hi=used.length?Math.max.apply(null,used):30;for(var i=Math.max(0,lo-2);i<=Math.min(127,hi+4);i++)if(used.indexOf(i)<0)unknown.push(i);
+ add('Unknown IDs '+unknown.length);add('ID test: two taps');add('Native crash risk');save();render();}
+ function testId(){if(!unknown.length){add('No unknown IDs');render();return;}var id=unknown[idPos%unknown.length];if(!armed){armed=true;show('Native ID risk',['ID '+id,'Tap ID again','May crash app']);return;}armed=false;idPos++;log('Testing ID '+id);save();try{var o=hmSensor.createSensor(id);add('ID '+id+' '+(o?'object':'null'));if(o){inspect(o,'ID '+id,1,[]);var p=Object.getPrototypeOf(o);if(p)Object.getOwnPropertyNames(p).forEach(function(k){if(k!=='constructor')add('Method '+k);});}}catch(e){add('ID error '+e);}save();pos=Math.floor((lines.length-1)/8);render();}
  function display(){var a=candidate;show('LIVE '+names[selected],[ 'Events: '+events,'Samples: '+samples,a?'XYZ unverified':'No XYZ yet',a?'X: '+a[0]:last.slice(0,19),a?'Y: '+a[1]:last.slice(19,38),a?'Z: '+a[2]:last.slice(38,57),a?source:fileState,'STOP to save']);}
  function stop(){running=false;session++;if(live!==null){try{timer.stopTimer(live);}catch(e){}live=null;}
  for(var i=0;i<sensors.length;i++){var s=sensors[i];if(s.started){try{s.o.stop();}catch(e){log('stop '+e);}s.started=false;}for(var j=0;j<s.listeners.length;j++){var l=s.listeners[j];try{if(typeof s.o.removeEventListener==='function')s.o.removeEventListener(l.id,l.fn);}catch(e){log('remove '+e);}}s.listeners=[];}
@@ -36,17 +50,17 @@
  cleanup=function(){if(running){stop();save();}};
  function start(){if(running)return;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;
  try{o=hmSensor.createSensor(hmSensor.id[n]);if(!o)throw Error('null sensor');var s={o:o,started:false,listeners:[]};sensors=[s];
- var en=['CHANGE','DELAY'];for(var j=0;j<en.length;j++){(function(key){try{var id=hmSensor.event[key];if(typeof id!=='number'||typeof o.addEventListener!=='function')return;var fn=function(){if(!running||session!==token)return;events++;var args=[];for(var k=0;k<arguments.length;k++)args.push(arguments[k]);record(n+' '+key,args);display();};o.addEventListener(id,fn);s.listeners.push({id:id,fn:fn});log(n+' registered '+key+' '+id);}catch(e){log(key+' error '+e);}})(en[j]);}
+ var en=['CHANGE','DELAY'];try{Object.getOwnPropertyNames(hmSensor.event).forEach(function(k){if(/motion|accel|gravity|orient|gyro|tilt/i.test(k)&&en.indexOf(k)<0)en.push(k);});}catch(e){}for(var j=0;j<en.length;j++){(function(key){try{var id=hmSensor.event[key];if(typeof id!=='number'||typeof o.addEventListener!=='function')return;var fn=function(){if(!running||session!==token)return;events++;var args=[];for(var k=0;k<arguments.length;k++)args.push(arguments[k]);record(n+' '+key,args);display();};var ret=o.addEventListener(id,fn);log('Listener result '+describe(ret));s.listeners.push({id:id,fn:fn});log(n+' registered '+key+' '+id);}catch(e){log(key+' error '+e);}})(en[j]);}
  if(typeof o.start==='function'){try{o.start();s.started=true;log(n+' start returned');}catch(e){log('start error '+e);}}
- function tick(){if(!running||session!==token)return;samples++;try{if(n==='ACTIVITY'&&typeof o.getActivityInfo==='function')record(n+' poll',o.getActivityInfo());else if(n==='SLEEP'&&typeof o.getBasicInfo==='function')record(n+' basic',o.getBasicInfo());else if(n==='SPORT'&&samples===1&&typeof o.getSportRecord==='function')record(n+' record',o.getSportRecord());}catch(e){last=String(e);log('poll error '+e);}display();if(samples%30===0)save();}
+ function tick(){if(!running||session!==token)return;samples++;try{if(n==='ACTIVITY'&&typeof o.getActivityInfo==='function')record(n+' poll',o.getActivityInfo());else if(n==='SLEEP'&&typeof o.getBasicInfo==='function')record(n+' basic',o.getBasicInfo());else if(n==='SPORT'&&samples===1&&typeof o.getSportRecord==='function')record(n+' record',o.getSportRecord());else if(names.indexOf(n)>=3){var getters=['getCurrent','getData','getValue','getAcceleration','getOrientation','getGravity'];for(var g=0;g<getters.length;g++){var k=getters[g];if(typeof o[k]==='function'){try{record(n+' '+k,o[k]());}catch(e){log(k+' '+e);}}}if(typeof o.getX==='function'&&typeof o.getY==='function'&&typeof o.getZ==='function')record(n+' axes',{x:o.getX(),y:o.getY(),z:o.getZ()});}}catch(e){last=String(e);log('poll error '+e);}display();if(samples%30===0)save();}
  live=timer.createTimer(100,1000,tick);display();
  }catch(e){stop();add('Start error '+e);save();render();}}
  function button(x,y,w,t,f){hmUI.createWidget(hmUI.widget.BUTTON,{x:x,y:y,w:w,h:38,text:t,text_size:16,normal_color:0x225599,press_color:0x448855,click_func:f});}
  button(12,305,80,'PREV',function(){if(!running){pos--;render();}});
  button(100,305,80,'NEXT',function(){if(!running){pos++;render();}});
  button(12,349,80,'SELECT',function(){if(running)return;selected=(selected+1)%names.length;show('Selected',[names[selected],'Press START','Test one sensor','at a time',fileState]);});
- button(100,349,80,'START/STOP',function(){if(running){stop();add('Events: '+events);add('Samples: '+samples);add('Last: '+last);if(candidate)add('XYZ? '+candidate.join(','));save();add(fileState);pos=Math.floor((lines.length-1)/8);render();}else start();});
- add('Select sensor');add('ACTIVITY default');add('START/STOP');add('CHANGE and DELAY');add('XYZ not verified');add('Log on stop');add('Local file only');add('No unknown IDs');render();
+ button(100,349,80,'RUN/END',function(){if(running){stop();add('Events: '+events);add('Samples: '+samples);add('Last: '+last);if(candidate)add('XYZ? '+candidate.join(','));save();add(fileState);pos=Math.floor((lines.length-1)/8);render();}else start();});
+ button(12,393,168,'ID TEST',function(){if(!running)testId();}); inventory();
  },onDestroy:function(){cleanup();}
  });
 })();
