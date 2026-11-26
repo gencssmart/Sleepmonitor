@@ -1,2 +1,2 @@
-# Sensor Probe 0.9
-Read-only descriptor inventory of HmSensorApi and SensorWidgetFactory, including prototypes and nested objects. CORE SCAN repeats the inventory. No unknown native constructors or getters are invoked by the core scan. Existing named sensor live tests and unverified XYZ detection remain. Unknown ID test button removed after six null results in 0.8. Local bounded log; no phone export. Packaging unchanged.
+# Sensor Probe 1.0
+Guarded experimental core calls: FACT activity, FACT stand, FACT step, API ACTIVITY. Select mode and press RUN twice to acknowledge native crash risk. Existing instances preferred; unknown constructor arguments are not guessed. Poll zero-argument getters, report unverified XYZ and changes, save bounded local log. Native ownership is unknown; no speculative delete calls. Restart app after deep tests. Existing named tests and packaging retained.
