@@ -1,2 +1,2 @@
-# Sensor Probe 0.5
-Targeted inventory of runtime core (one nested level), hmFS, hmBle, named sensor instances and prototypes. Unnamed IDs 0–40 are listed but not instantiated because native behavior is unknown. LIVE samples only an exposed getX/getY/getZ trio every 500 ms; numeric values are not proof of acceleration. No BLE writes or filesystem changes. SCAN and page destruction stop the timer. Same app ID and packaging as 0.4. Device validation required.
+# Sensor Probe 0.6
+Targeted runtime inventory, alternative getter candidates, manual unnamed ID tests (0–9,36–40), live raw results and tentative XYZ. Native unknown IDs may crash the app; test one per tap after warning. Event methods inventoried only, no undocumented subscriptions. Console logging; no file export or BLE writes. Same packaging as 0.5. Device testing required.
