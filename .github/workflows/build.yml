@@ -27,6 +27,21 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Restore persistent signing key if configured
+        env:
+          KEYSTORE_B64: ${{ secrets.SLEEPMONITOR_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.SLEEPMONITOR_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            test -n "$KEYSTORE_PASSWORD"
+            mkdir -p "$HOME/.android"
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/sleepmonitor.p12"
+            keytool -importkeystore -srckeystore "$RUNNER_TEMP/sleepmonitor.p12" -srcstoretype PKCS12 -srcstorepass "$KEYSTORE_PASSWORD" -srcalias sleepmonitor -destkeystore "$HOME/.android/debug.keystore" -deststoretype JKS -deststorepass android -destkeypass android -destalias androiddebugkey -noprompt
+            rm -f "$RUNNER_TEMP/sleepmonitor.p12"
+          else
+            echo "::warning::Persistent signing not configured; APK uses temporary debug key."
+          fi
+
       - name: Build APK
         run: gradle assembleDebug --no-daemon
 
