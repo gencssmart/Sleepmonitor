@@ -4,7 +4,7 @@ build=root/"build"
 manifest=json.loads((build/"app.json").read_text())
 assert manifest["app"]["appType"]=="app"
 assert {p["deviceSource"] for p in manifest["platforms"]}==set(range(260,267))
-assert (build/"page/index.js").is_file()
+assert (build/"page/index.page.js").is_file()
 assert (build/"app.js").is_file()
 device=io.BytesIO()
 with zipfile.ZipFile(device,"w",zipfile.ZIP_DEFLATED) as z:

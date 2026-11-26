@@ -21,10 +21,12 @@ jobs:
           python -c "from PIL import Image,ImageDraw; im=Image.new('RGBA',(64,64),(15,40,30,255)); d=ImageDraw.Draw(im); d.line((10,32,54,32),fill='white',width=4); d.line((32,10,32,54),fill='white',width=4); im.save('sensor-probe/assets/icon.png')"
           rm -f sensor-probe/assets/.gitkeep
           PYTHONPATH="$RUNNER_TEMP/zmake" python -m zmake "$PWD/sensor-probe" </dev/null
+          node --check sensor-probe/app.js
+          node --check sensor-probe/page/index.page.js
           python sensor-probe/package_app.py
           unzip -t sensor-probe/dist/sensor-probe-app.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: SleepMonitor-SensorProbe-0.1
+          name: SleepMonitor-SensorProbe-0.2
           path: sensor-probe/dist/sensor-probe-app.zip
           if-no-files-found: error

@@ -6,12 +6,12 @@
     "appId": 9876142,
     "appName": "Sensor Probe",
     "version": {
-      "code": 1,
-      "name": "0.1.0"
+      "code": 2,
+      "name": "0.2.0"
     },
     "icon": "icon.png",
     "vender": "SleepMonitor",
-    "description": "Read-only sensor diagnostic"
+    "description": "Startup and touch diagnostic"
   },
   "permissions": [],
   "runtime": {
@@ -19,12 +19,11 @@
       "compatible": "1.0.0",
       "target": "1.0.1",
       "minVersion": "1.0.0"
-    },
-    "type": 2
+    }
   },
   "i18n": {
     "en-US": {
-      "appName": "Sensor Probe"
+      "name": "Sensor Probe"
     }
   },
   "debug": false,
@@ -61,8 +60,15 @@
   "module": {
     "page": {
       "pages": [
-        "page/index"
-      ]
+        "page/index.page"
+      ],
+      "window": {
+        "navigationBarBackgroundColor": "#000000",
+        "navigationBarTextStyle": "white",
+        "navigationBarTitleText": "Sensor Probe",
+        "backgroundColor": "#000000",
+        "backgroundTextStyle": "light"
+      }
     }
   },
   "designWidth": 192,
