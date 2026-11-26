@@ -18,7 +18,7 @@
  var n=hmFS.write(fd,buf,0,a.length);if(n!==a.length)throw Error('write '+n+'/'+a.length);fileState='Saved '+n+' B';
  }catch(e){fileState='FS error';log(String(e));}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){fileState='Close error';}}}
  function label(y,h,s,size,color){return hmUI.createWidget(hmUI.widget.TEXT,{x:8,y:y,w:176,h:h,text:s,text_size:size,color:color,align_h:hmUI.align.CENTER_H,text_style:hmUI.text_style.WRAP});}
- label(35,32,'Sensor Probe 1.1',18,0xffffff);
+ label(35,32,'Sensor Probe 1.2',18,0xffffff);
  var header=label(70,30,'Ready',16,0x55ff88),widgets=[];
  for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',12,0xffffff));
  function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,22));}
@@ -61,24 +61,34 @@
  var lo=used.length?Math.min.apply(null,used):10,hi=used.length?Math.max.apply(null,used):30;for(var i=Math.max(0,lo-2);i<=Math.min(127,hi+4);i++)if(used.indexOf(i)<0)unknown.push(i);
  add('Unknown IDs '+unknown.length);coreInventory();save();render();}
  function testId(){if(!unknown.length){add('No unknown IDs');render();return;}var id=unknown[idPos%unknown.length];if(!armed){armed=true;show('Native ID risk',['ID '+id,'Tap ID again','May crash app']);return;}armed=false;idPos++;log('Testing ID '+id);save();try{var o=hmSensor.createSensor(id);add('ID '+id+' '+(o?'object':'null'));if(o){inspect(o,'ID '+id,1,[]);var p=Object.getPrototypeOf(o);if(p)Object.getOwnPropertyNames(p).forEach(function(k){if(k!=='constructor')add('Method '+k);});}}catch(e){add('ID error '+e);}save();pos=Math.floor((lines.length-1)/8);render();}
+ var scanTimer=null,scanGeneration=0;
+ function cancelScan(){scanGeneration++;if(scanTimer!==null){try{timer.stopTimer(scanTimer);}catch(e){}scanTimer=null;}}
  function constructorScan(){
- lines=[];pos=0;deepArmed=false;
- function emitSource(fn,name){
- if(typeof fn!=='function')return;
- add(name+' args '+fn.length);
- try{var src=Function.prototype.toString.call(fn);if(src.indexOf('[native code]')>=0){add('Native source hidden');return;}add('Source '+src.length);add(src.slice(0,2400));if(src.length>2400)add('Source truncated');}catch(e){add('Source error '+e);}
- }
- ['HmSensorApi','SensorWidgetFactory'].forEach(function(k){try{var C=DeviceRuntimeCore[k];emitSource(C,k);if(C&&C.prototype){['createSensor','deleteSensor','activity','stand','step'].forEach(function(m){var d=Object.getOwnPropertyDescriptor(C.prototype,m);if(d)emitSource(d.value,m);});}}catch(e){add(k+' '+e);}});
- var seen=[],queue=[{o:currentApp,p:'App',d:0},{o:currentModule,p:'Module',d:0},{o:DeviceRuntimeCore,p:'Core',d:0},{o:hmSensor,p:'hmSensor',d:0}],budget=500;
- while(queue.length&&budget>0&&seen.length<100){var q=queue.shift(),o=q.o;if(!o||(typeof o!=='object'&&typeof o!=='function')||seen.indexOf(o)>=0)continue;seen.push(o);
- try{var ks=Object.getOwnPropertyNames(o);if(q.d===0)add(q.p+' keys '+ks.length);
- for(var i=0;i<ks.length&&budget>0;i++){budget--;var k=ks[i],p=q.p+'.'+k;if(k==='caller'||k==='arguments'||k==='constructor')continue;var d=Object.getOwnPropertyDescriptor(o,k);if(!d)continue;var v=d.value;
- if(q.d===0||/sensor|runtime|context|factory|accel|gyro|motion|gravity|orient|tilt|position|native|widget/i.test(k))add(p+' '+(d.get?'getter':typeof v));
- if(q.d<4&&v&&(typeof v==='object'||typeof v==='function')&&queue.length<200)queue.push({o:v,p:p,d:q.d+1});
- }
- }catch(e){log(q.p+' '+e);}
- }
- add('Objects '+seen.length);add('Budget left '+budget);add('No constructors called');save();render();
+ cancelScan();lines=[];pos=0;deepArmed=false;unknown=[];logLines=[];
+ var token=scanGeneration,seen=[],queue=[],hits=[],instances=[],errors=0,props=0,depthCut=0,queueCut=0,active=null;
+ var motion=/accel|gyro|motion|gravity|orient|tilt|(^|[._])xyz|wrist/i;
+ function value(o,k){try{var d=Object.getOwnPropertyDescriptor(o,k);return d&&d.value;}catch(e){return undefined;}}
+ function enqueue(o,p,d){if(!o||(typeof o!=='object'&&typeof o!=='function')||o===Object.prototype||o===Function.prototype||seen.indexOf(o)>=0)return;if(d>8){depthCut++;return;}if(queue.length>=1500){queueCut++;return;}seen.push(o);queue.push({o:o,p:p,d:d});}
+ var classes=['HmSensorApi','SensorWidgetFactory'],protos=classes.map(function(k){return value(value(DeviceRuntimeCore,k),'prototype');});
+ ['version','commit','buildDate'].forEach(function(k){var v=value(DeviceRuntimeCore,k);add(k+' '+(typeof v==='string'?v:'unavailable'));});
+ classes.forEach(function(k){var c=value(DeviceRuntimeCore,k);if(typeof c==='function'){log(k+' arity '+c.length);try{log(k+' '+Function.prototype.toString.call(c));}catch(e){log(String(e));}}});
+ var ids=value(hmSensor,'id'),used=[];
+ try{Object.getOwnPropertyNames(ids).forEach(function(k){var v=value(ids,k);if(typeof v==='number'){used.push(v);log('ID '+k+' '+v);if(motion.test(k)&&names.indexOf(k)<0)names.push(k);}});}catch(e){errors++;}
+ if(used.length)for(var i=Math.max(0,Math.min.apply(null,used)-2);i<=Math.min(127,Math.max.apply(null,used)+4);i++)if(used.indexOf(i)<0)unknown.push(i);
+ add('Unknown IDs '+unknown.join(','));
+ enqueue(value(DeviceRuntimeCore,'Globals'),'Globals',0);enqueue(value(currentApp,'app'),'App.app',0);enqueue(value(currentApp,'current'),'App.current',0);enqueue(value(currentModule,'module'),'Module.module',0);
+ enqueue(currentApp,'App',0);enqueue(currentModule,'Module',0);enqueue(hmSensor,'Sensor',0);enqueue(DeviceRuntimeCore,'Core',0);
+ if(typeof hmBle!=='undefined'){enqueue(hmBle,'BLE',0);try{log('BLE keys '+Object.getOwnPropertyNames(hmBle).join(','));}catch(e){errors++;}}
+ if(typeof hmFS!=='undefined')enqueue(hmFS,'FS',0);
+ function finish(reason){cancelScan();add('Objects '+processed);add('Properties '+props);add('Motion hits '+hits.length);add('Instances '+instances.length);add('Stop '+reason);add('Depth cuts '+depthCut);add('Queue cuts '+queueCut);add('Errors '+errors);
+ hits.slice(0,8).forEach(function(x){add(x);});instances.slice(0,4).forEach(function(x){add(x);});add('No native sensor calls');add('Phone export unverified');save();add(fileState);pos=0;render();}
+ var processed=0;
+ function tick(){if(token!==scanGeneration)return;try{var steps=0;while(steps++<40&&props<16000){
+ if(!active){if(processed>=1000||!queue.length){finish(queue.length?'object limit':'queue empty');return;}var q=queue.shift();processed++;var keys=[];try{keys=Object.getOwnPropertyNames(q.o);var p=Object.getPrototypeOf(q.o);for(var j=0;j<protos.length;j++)if(protos[j]&&p===protos[j]){var hit=classes[j]+' '+q.p;instances.push(hit);log('INSTANCE '+hit);}enqueue(p,q.p+'.proto',q.d+1);}catch(e){errors++;}active={q:q,keys:keys,i:0};}
+ if(active.i>=active.keys.length){active=null;continue;}var k=active.keys[active.i++],q=active.q;props++;if(k==='caller'||k==='arguments'||k==='constructor')continue;
+ try{var d=Object.getOwnPropertyDescriptor(q.o,k);if(!d)continue;var v=d.value,p=q.p+'.'+k;if(motion.test(k)){var h=p+' '+(d.get?'getter':typeof v);hits.push(h);log('MATCH '+h);}if(q.d===0||/sensor|context|runtime|factory/i.test(k))log(p+' '+typeof v);enqueue(v,p,q.d+1);}catch(e){errors++;}
+ }if(props>=16000){finish('property limit');return;}show('Scanning',['Objects '+processed,'Properties '+props,'Pending '+queue.length,'Motion hits '+hits.length,'Instances '+instances.length,'SCAN to cancel']);}catch(e){errors++;finish('error '+e);}}
+ try{scanTimer=timer.createTimer(100,50,tick);}catch(e){finish('timer error');}
  }
  function deepStart(n){
  var factory=n.indexOf('FACT ')===0, key=factory?n.slice(5):'createSensor';
@@ -111,8 +121,8 @@
  for(var i=0;i<sensors.length;i++){var s=sensors[i];if(s.started){try{s.o.stop();}catch(e){log('stop '+e);}s.started=false;}for(var j=0;j<s.listeners.length;j++){var l=s.listeners[j];try{if(typeof s.o.removeEventListener==='function')s.o.removeEventListener(l.id,l.fn);}catch(e){log('remove '+e);}}s.listeners=[];}
  if(deep){try{log('Deep session ended; native ownership unknown');}catch(e){log('delete '+e);}deep=null;}
  }
- cleanup=function(){if(running){stop();save();}};
- function start(){if(running)return;var mode=names[selected];if(/^(FACT |API )/.test(mode)&&!deepArmed){deepArmed=true;show('Native call risk',[mode,'Tap RUN again','May crash app']);return;}deepArmed=false;previousXYZ=null;changes=0;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;
+ cleanup=function(){cancelScan();if(running){stop();save();}};
+ function start(){if(running||scanTimer!==null)return;var mode=names[selected];if(/^(FACT |API )/.test(mode)&&!deepArmed){deepArmed=true;show('Native call risk',[mode,'Tap RUN again','May crash app']);return;}deepArmed=false;previousXYZ=null;changes=0;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;
  try{if(/^(FACT |API )/.test(n)){o=deepStart(n);live=timer.createTimer(100,1000,function(){if(!running||session!==token)return;samples++;deepPoll(n,o);display();if(samples%30===0)save();});display();return;}o=hmSensor.createSensor(hmSensor.id[n]);if(!o)throw Error('null sensor');var s={o:o,started:false,listeners:[]};sensors=[s];
  var en=['CHANGE','DELAY'];try{Object.getOwnPropertyNames(hmSensor.event).forEach(function(k){if(/motion|accel|gravity|orient|gyro|tilt/i.test(k)&&en.indexOf(k)<0)en.push(k);});}catch(e){}for(var j=0;j<en.length;j++){(function(key){try{var id=hmSensor.event[key];if(typeof id!=='number'||typeof o.addEventListener!=='function')return;var fn=function(){if(!running||session!==token)return;events++;var args=[];for(var k=0;k<arguments.length;k++)args.push(arguments[k]);record(n+' '+key,args);display();};var ret=o.addEventListener(id,fn);log('Listener result '+describe(ret));s.listeners.push({id:id,fn:fn});log(n+' registered '+key+' '+id);}catch(e){log(key+' error '+e);}})(en[j]);}
  if(typeof o.start==='function'){try{o.start();s.started=true;log(n+' start returned');}catch(e){log('start error '+e);}}
@@ -122,9 +132,9 @@
  function button(x,y,w,t,f){hmUI.createWidget(hmUI.widget.BUTTON,{x:x,y:y,w:w,h:38,text:t,text_size:16,normal_color:0x225599,press_color:0x448855,click_func:f});}
  button(12,305,80,'PREV',function(){if(!running){pos--;render();}});
  button(100,305,80,'NEXT',function(){if(!running){pos++;render();}});
- button(12,349,80,'SELECT',function(){if(running)return;deepArmed=false;selected=(selected+1)%names.length;show('Selected',[names[selected],'Press START','Test one sensor','at a time',fileState]);});
+ button(12,349,80,'SELECT',function(){if(running||scanTimer!==null)return;deepArmed=false;selected=(selected+1)%names.length;show('Selected',[names[selected],'Press START','Test one sensor','at a time',fileState]);});
  button(100,349,80,'RUN/END',function(){if(running){stop();add('Events: '+events);add('Samples: '+samples);add('Last: '+last);if(candidate)add('XYZ? '+candidate.join(','));save();add(fileState);pos=Math.floor((lines.length-1)/8);render();}else start();});
- button(12,393,168,'CTOR SCAN',function(){if(!running)constructorScan();}); constructorScan();
+ button(12,393,168,'DEEP SCAN',function(){if(running)return;if(scanTimer!==null){cancelScan();add('Scan cancelled');save();render();}else constructorScan();}); constructorScan();
  },onDestroy:function(){cleanup();}
  });
 })();
