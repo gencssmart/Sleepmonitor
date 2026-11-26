@@ -6,10 +6,10 @@
  onInit:function(){},
  build:function(){
  var lines=[],pos=0,live=null,running=false,session=0,sensors=[],events=0,samples=0,last='',candidate=null,source='',logLines=[],fileState='Not saved',logger=null,selected=0;
- var names=['ID 8','ID 9','ID 36','ID 37','ID 38','ID 39','ACTIVITY','SPORT','SLEEP','FACT activity','FACT stand','FACT step','API ACTIVITY','BLE INFO','FS EXPORT','RESULTS']; var results={},activeMode='',activeId=null; var deep=null,deepArmed=false,previousXYZ=null,changes=0; var readers=[],unknown=[],idPos=0,armed=false;
+ var names=['ID 8','ID 9','ID 36','ID 37','ID 38','ID 39','ACTIVITY','SPORT','SLEEP','FACT activity','FACT stand','FACT step','API ACTIVITY','BLE INFO','FS EXPORT','RESULTS','BLE CALLBACK','BLE STATUS','RAW DATA','XYZ DECODER','SYSTEM EVENTS','FS READ','MOTION TEST']; var results={},activeMode='',activeId=null; var deep=null,deepArmed=false,previousXYZ=null,changes=0; var readers=[],unknown=[],idPos=0,armed=false;
  try{logger=DeviceRuntimeCore.HmLogger.getLogger('SensorProbe');}catch(e){}
  function log(s){s=String(s).slice(0,600);logLines.push(Date.now()+' '+s);if(logLines.length>600)logLines.shift();try{if(logger)logger.log(s);else console.log(s);}catch(e){}}
- function add(s){s=String(s);log(s);while(s.length>22){lines.push(s.slice(0,22));s=s.slice(22);}lines.push(s);if(lines.length>1200)lines.splice(0,8);}
+ function add(s){s=String(s);log(s);while(s.length>22){var cut=s.lastIndexOf(' ',22);if(cut<8)cut=22;lines.push(s.slice(0,cut));s=s.slice(cut).replace(/^ +/,'');}lines.push(s);if(lines.length>1200)lines.splice(0,8);}
  function save(){var fd=null;try{
  if(typeof hmFS==='undefined'||typeof hmFS.open!=='function'||typeof hmFS.write!=='function'||typeof hmFS.close!=='function')throw Error('FS unavailable');
  var str=logLines.join('\n')+'\n',buf=new ArrayBuffer(str.length),a=new Uint8Array(buf);for(var i=0;i<str.length;i++){var c=str.charCodeAt(i);a[i]=c<128?c:63;}
@@ -18,7 +18,7 @@
  var n=hmFS.write(fd,buf,0,a.length);if(n!==a.length)throw Error('write '+n+'/'+a.length);fileState='Saved '+n+' B';
  }catch(e){fileState='FS error';log(String(e));}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){fileState='Close error';}}}
  function label(y,h,s,size,color){return hmUI.createWidget(hmUI.widget.TEXT,{x:8,y:y,w:176,h:h,text:s,text_size:size,color:color,align_h:hmUI.align.CENTER_H,text_style:hmUI.text_style.WRAP});}
- label(35,32,'Sensor Probe 1.4',18,0xffffff);
+ label(35,32,'Sensor Probe 1.5',18,0xffffff);
  var header=label(70,30,'Ready',16,0x55ff88),widgets=[];
  for(var i=0;i<8;i++)widgets.push(label(108+i*24,24,'',12,0xffffff));
  function show(h,a){header.setProperty(hmUI.prop.TEXT,h);for(var i=0;i<8;i++)widgets[i].setProperty(hmUI.prop.TEXT,String(a[i]||'').slice(0,22));}
@@ -28,7 +28,9 @@
  function xyz(v,depth,seen){if(!v||typeof v!=='object'||depth<0||seen.indexOf(v)>=0||seen.length>=40)return null;seen.push(v);
  try{if((Array.isArray(v)||(typeof ArrayBuffer.isView==='function'&&ArrayBuffer.isView(v)))&&v.length===3&&finite(v[0])&&finite(v[1])&&finite(v[2]))return [v[0],v[1],v[2]];var sets=[['x','y','z'],['X','Y','Z'],['accX','accY','accZ'],['accelX','accelY','accelZ']];for(var j=0;j<sets.length;j++){var k=sets[j],a=[v[k[0]],v[k[1]],v[k[2]]];if(a.every(finite))return a;}
  var keys=Object.keys(v);for(var i=0;i<Math.min(keys.length,24);i++){var r=xyz(v[keys[i]],depth-1,seen);if(r)return r;}}catch(e){}return null;}
- function record(n,v){last=describe(v);var a=xyz(v,4,[]);if(a){if(previousXYZ&&a.some(function(v,i){return v!==previousXYZ[i];}))changes++;previousXYZ=a.slice();candidate=a;source=n;}log(n+' '+last);}
+ var rawFrames=[],motionBase=null;
+ function capture(n,v,depth){if(depth<0||!v||typeof v!=='object')return;try{var a=null;if(v instanceof ArrayBuffer)a=new Uint8Array(v);else if(typeof ArrayBuffer.isView==='function'&&ArrayBuffer.isView(v))a=new Uint8Array(v.buffer,v.byteOffset,v.byteLength);else if(Array.isArray(v)&&v.length>=3&&v.every(function(x){return finite(x)&&x>=0&&x<=255&&Math.floor(x)===x;}))a=v;if(a){var b=[];for(var i=0;i<Math.min(a.length,64);i++)b.push(a[i]);rawFrames.push({n:n,b:b});if(rawFrames.length>12)rawFrames.shift();log('RAW '+n+' '+b.join(','));return;}Object.keys(v).slice(0,12).forEach(function(k){var d=Object.getOwnPropertyDescriptor(v,k);if(d)capture(n+'.'+k,d.value,depth-1);});}catch(e){log('RAW '+e);}}
+ function record(n,v){capture(n,v,3);last=describe(v);var a=xyz(v,4,[]);if(a){if(previousXYZ&&a.some(function(v,i){return v!==previousXYZ[i];}))changes++;previousXYZ=a.slice();candidate=a;source=n;}log(n+' '+last);}
  function inspect(root,path,depth,seen){
  if(!root||(typeof root!=='object'&&typeof root!=='function')||depth<0||seen.indexOf(root)>=0||seen.length>=80)return;
  seen.push(root);var keys=[];try{keys=Object.getOwnPropertyNames(root);}catch(e){add(path+' error '+e);return;}
@@ -122,6 +124,21 @@
  }catch(e){log('Journal '+e);return false;}finally{if(fd!==null&&fd>=0)try{hmFS.close(fd);}catch(e){}}}
  function inventorySensor(o){var p=o,seen=[];for(var j=0;j<4&&p&&p!==Object.prototype;j++){var ks=Object.getOwnPropertyNames(p);for(var i=0;i<ks.length;i++){var k=ks[i];if(k==='constructor'||seen.indexOf(k)>=0)continue;seen.push(k);var d=Object.getOwnPropertyDescriptor(p,k);if(d)add(k+' '+(d.get?'getter':typeof d.value)+(typeof d.value==='function'?' args '+d.value.length:''));}p=Object.getPrototypeOf(p);}}
  function summary(){lines=[];pos=0;names.slice(0,6).forEach(function(n){add(n+' '+(results[n]||'Not tested'));});save();render();}
+ function extra(n){
+ lines=[];pos=0;
+ function roots(){var a=[];if(typeof hmBle!=='undefined')a.push(hmBle);if(typeof hmBLE!=='undefined'&&a.indexOf(hmBLE)<0)a.push(hmBLE);return a;}
+ if(n==='BLE CALLBACK'||n==='BLE STATUS'){
+ var a=roots();add('BLE roots '+a.length);a.forEach(function(o){var seen=[];for(var j=0;j<3&&o&&o!==Object.prototype;j++){try{Object.getOwnPropertyNames(o).forEach(function(k){if(seen.indexOf(k)>=0)return;seen.push(k);if(!(n==='BLE CALLBACK'?/on|callback|notif/i:/status|connect|state|profile/i).test(k))return;var d=Object.getOwnPropertyDescriptor(o,k);if(!d)return;add(k);add(typeof d.value==='function'?'fn args '+d.value.length:d.get?'getter skipped':typeof d.value+' '+(typeof d.value==='number'||typeof d.value==='boolean'?d.value:''));});o=Object.getPrototypeOf(o);}catch(e){add(String(e));break;}}});add('Passive only');add('No BLE callbacks bound');
+ }else if(n==='SYSTEM EVENTS'){
+ var a=[['Sensor',hmSensor],['Core',DeviceRuntimeCore],['App',currentApp],['Module',currentModule]];a.forEach(function(p){inspect(p[1],p[0],3,[]);});try{Object.keys(hmSensor.event).forEach(function(k){add(k+' '+hmSensor.event[k]);});}catch(e){add(String(e));}add('No system hooks bound');
+ }else if(n==='RAW DATA'||n==='XYZ DECODER'){
+ add('Frames '+rawFrames.length);if(!rawFrames.length)add('Run sensor test first');
+ rawFrames.slice(-3).forEach(function(f){add(f.n);var b=f.b;if(n==='RAW DATA'){add(b.map(function(x){return ('0'+x.toString(16)).slice(-2);}).join(' '));add(b.join(','));}else{[1,2,4].forEach(function(w){[true,false].forEach(function(le){if(w===1&&!le)return;if(b.length<3*w)return;var a=new Uint8Array(b),d=new DataView(a.buffer),v=[];for(var i=0;i<3;i++)v.push(w===1?d.getInt8(i):w===2?d.getInt16(i*w,le):d.getInt32(i*w,le));add((w*8)+'bit '+(le?'LE':'BE')+'?');add(v.join(','));});});}});add('Not verified XYZ');
+ }else if(n==='FS READ'){
+ var fd=null;try{if(typeof hmFS.O_RDONLY!=='number')throw Error('Read flag missing');fd=hmFS.open('sensor-probe.log',hmFS.O_RDONLY);if(typeof fd!=='number'||fd<0)throw Error('Open failed');var b=new ArrayBuffer(2048),a=new Uint8Array(b),count=hmFS.read(fd,b,0,a.length);if(typeof count!=='number'||count<0||count>a.length)throw Error('Read failed');add('Read '+count+' B');var str='';for(var i=0;i<count;i++)str+=String.fromCharCode(a[i]);str.split('\n').slice(0,40).forEach(add);}catch(e){add(String(e));}finally{if(typeof fd==='number'&&fd>=0)try{hmFS.close(fd);}catch(e){add('Close error');}}render();return;
+ }else if(n==='MOTION TEST'){if(!candidate){add('No XYZ candidate');add('Run sensor test first');}else if(!motionBase){motionBase=candidate.slice();add('Baseline stored');add(candidate.join(','));add('Rotate and retest');}else{add('Baseline '+motionBase.join(','));add('Current '+candidate.join(','));add('Delta '+candidate.map(function(v,i){return v-motionBase[i];}).join(','));add('Unverified XYZ');motionBase=null;}}
+ save();render();
+ }
  function diagnostic(n){
  lines=[];pos=0;log('Diagnostic '+n);
  if(n==='BLE INFO'){
@@ -138,7 +155,7 @@
  if(activeId!==null)journal(activeId,'session ended');if(deep){try{log('Deep session ended; native ownership unknown');}catch(e){log('delete '+e);}deep=null;}
  }
  cleanup=function(){cancelScan();if(running){stop();save();}};
- function start(){if(running||scanTimer!==null)return;var mode=names[selected];if(mode==='RESULTS'){summary();return;}if(mode==='BLE INFO'||mode==='FS EXPORT'){diagnostic(mode);return;}lines=[];pos=0;if(/^(FACT |API |ID )/.test(mode)&&!deepArmed){deepArmed=true;show('Native call risk',[mode,'Tap RUN again','May crash app']);return;}deepArmed=false;previousXYZ=null;changes=0;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;activeMode=n;activeId=null;add('Test '+n);
+ function start(){if(running||scanTimer!==null)return;var mode=names[selected];if(['BLE CALLBACK','BLE STATUS','RAW DATA','XYZ DECODER','SYSTEM EVENTS','FS READ','MOTION TEST'].indexOf(mode)>=0){extra(mode);return;}if(mode==='RESULTS'){summary();return;}if(mode==='BLE INFO'||mode==='FS EXPORT'){diagnostic(mode);return;}lines=[];pos=0;if(/^(FACT |API |ID )/.test(mode)&&!deepArmed){deepArmed=true;show('Native call risk',[mode,'Tap RUN again','May crash app']);return;}deepArmed=false;previousXYZ=null;changes=0;events=0;samples=0;candidate=null;source='';last='';running=true;var token=++session;var n=names[selected],o;activeMode=n;activeId=null;add('Test '+n);
  try{if(/^(FACT |API )/.test(n)){o=deepStart(n);live=timer.createTimer(100,1000,function(){if(!running||session!==token)return;samples++;deepPoll(n,o);display();if(samples%30===0)save();});display();return;}var numeric=n.indexOf('ID ')===0,id=numeric?Number(n.slice(3)):hmSensor.id[n];if(numeric){activeId=id;results[n]='Pending';if(!journal(id,'before create'))throw Error('Journal failed');log('Testing ID '+id);save();}o=hmSensor.createSensor(id);if(numeric)journal(id,'create returned');if(!o)throw Error('null sensor');if(numeric)results[n]='Object returned';var s={o:o,started:false,listeners:[]};sensors=[s];if(numeric){inventorySensor(o);save();}
  var en=['CHANGE','DELAY'];try{Object.getOwnPropertyNames(hmSensor.event).forEach(function(k){if(/motion|accel|gravity|orient|gyro|tilt/i.test(k)&&en.indexOf(k)<0)en.push(k);});}catch(e){}for(var j=0;j<en.length;j++){(function(key){try{var id=hmSensor.event[key];if(typeof id!=='number'||typeof o.addEventListener!=='function')return;var fn=function(){if(!running||session!==token)return;events++;var args=[];for(var k=0;k<arguments.length;k++)args.push(arguments[k]);record(n+' '+key,args);display();};var ret=o.addEventListener(id,fn);log('Listener result '+describe(ret));s.listeners.push({id:id,fn:fn});log(n+' registered '+key+' '+id);}catch(e){log(key+' error '+e);}})(en[j]);}
  if(typeof o.start==='function'&&(!numeric||o.start.length===0)){try{o.start();s.started=true;log(n+' start returned');}catch(e){log('start error '+e);}}
