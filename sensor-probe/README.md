@@ -1,2 +1,2 @@
-# Sensor Probe 1.1
-CTOR SCAN inspects constructor and selected method source via Function.prototype.toString, reports native source hiding, and traverses runtime own property descriptors with bounded breadth and depth. No constructors or getters invoked by the scan. Existing guarded live modes retained. Local bounded log, no phone export. Packaging unchanged.
+# Sensor Probe 1.2
+DEEP SCAN runs incrementally (40 work steps per timer tick), up to 1000 processed objects, depth 8, 16000 properties. Prioritizes Globals and app/module contexts, checks direct prototype identity, reports motion-name matches and numeric ID gaps (not confirmed sensors), runtime version/commit/build date. No speculative constructors or sensor calls during scan. Existing live modes retained. BLE and FS descriptors inspected; phone export remains unverified and is not implemented. Local bounded log may omit older entries. DEEP SCAN cancels an active scan. BIN packaging unchanged.
