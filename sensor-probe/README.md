@@ -1,2 +1,2 @@
-# Sensor Probe 0.6
-Targeted runtime inventory, alternative getter candidates, manual unnamed ID tests (0–9,36–40), live raw results and tentative XYZ. Native unknown IDs may crash the app; test one per tap after warning. Event methods inventoried only, no undocumented subscriptions. Console logging; no file export or BLE writes. Same packaging as 0.5. Device testing required.
+# Sensor Probe 0.7
+Select ACTIVITY (default), SPORT or SLEEP. START/STOP runs one sensor at a time; stop saves a bounded local log to sensor-probe.log if hmFS supports the expected API. CHANGE/DELAY callbacks and getter results are experimental; named XYZ triples are candidates, not validated acceleration. No unknown sensor IDs are invoked. No phone export yet. Existing BIN packaging retained.
